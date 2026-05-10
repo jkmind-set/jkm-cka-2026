@@ -1,0 +1,91 @@
+Scenario: PriorityClass and Pod Preemption for a user workload
+
+Context:
+In a Kubernetes cluster with an existing priority namespace, a low-priority workload must be upgraded to a higher priority so it can preempt other pods if needed. The requirement is to create a new PriorityClass with a value just below the highest existing user-defined critical priority class and assign it to the busybox-logger deployment in the priority namespace.
+
+Question 1:
+Create a PriorityClass named `high-priority` for user workload with a value that is one less than the highest existing user-defined critical-priority class value. Patch the existing deployment `busybox-logger` running in namespace `priority` to use the new high priority class. Ensure the deployment rolls out successfully and that eviction behavior is visible. Do not modify any other deployment running in the priority namespace.
+
+Requirements:
+- Inspect existing PriorityClasses and identify the current user-defined critical priority class value.
+- Create `high-priority` with the calculated value.
+- Set `globalDefault: false`.
+- Patch the `busybox-logger` deployment in namespace `priority` so it uses `priorityClassName: high-priority`.
+- Ensure the deployment rollout succeeds.
+- Verify that other pods in the priority namespace are preempted/evicted if needed, not deleted manually.
+- Do not modify any other deployment in the `priority` namespace.
+
+Execution Strategy
+Step 1: Inspect existing PriorityClasses
+Find the current critical priority classes and note the highest user-defined value.
+
+Answer:
+kubectl get priorityclass
+
+Example output:
+NAME                           VALUE        GLOBAL-DEFAULT   AGE
+critical-priority              1000000      false            24m
+system-cluster-critical        2000000000   false            15d
+system-node-critical           2000001000   false            15d
+
+Interpretation:
+- Use the user-defined `critical-priority` value.
+- The new value must be one less than that value: `999999`.
+
+Step 2: Create the PriorityClass manifest
+Create a YAML file for `high-priority` because `kubectl create priorityclass` cannot specify arbitrary values cleanly for this use case.
+
+Answer:
+cat <<EOF > high-priority.yaml
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 999999
+globalDefault: false
+description: "High priority class for user workload"
+EOF
+
+kubectl apply -f high-priority.yaml
+
+Step 3: Patch the busybox-logger deployment
+Apply the new priority class only to the target deployment in the `priority` namespace.
+
+Answer:
+kubectl patch deployment busybox-logger -n priority --type='merge' -p '{"spec": {"template": {"spec": {"priorityClassName": "high-priority"}}}}'
+
+Step 4: Verify rollout success
+Check that the deployment rollout finished cleanly.
+
+Answer:
+kubectl rollout status deployment/busybox-logger -n priority
+
+Step 5: Confirm priority assignment and eviction behavior
+Inspect the deployment and pod to confirm the priority class name. Then look for evidence of preemption or eviction rather than manual deletion of other pods.
+
+Answer:
+kubectl get deployment busybox-logger -n priority -o yaml | grep -n "priorityClassName"
+kubectl describe pod -n priority | grep -i "priority class\|Preempted\|Evicted\|Preemption"
+
+Validation
+1. Ensure `high-priority` exists:
+   `kubectl get priorityclass high-priority`
+2. Ensure the deployment uses the new class:
+   `kubectl get deployment busybox-logger -n priority -o yaml | grep priorityClassName`
+3. Confirm rollout status:
+   `kubectl rollout status deployment/busybox-logger -n priority`
+4. Verify eviction/preemption events:
+   `kubectl get events -n priority | grep -i preempt\|evict`
+5. Check that no other deployments in namespace `priority` were modified.
+
+💡 Exam Tip: Preemption vs manual deletion
+The grader expects the high-priority pod to cause preemption if resources are constrained. Do not delete or scale down other pods manually; that can look like you avoided the real requirement.
+
+IMPORTANT:
+- Choose the existing user-defined critical priority class, not system classes.
+- The new value should be exactly one less than the identified critical value.
+- Only patch `busybox-logger` in namespace `priority`.
+
+Documentation Reference:
+PriorityClass --> https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/
+Priority and Preemption --> https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/
