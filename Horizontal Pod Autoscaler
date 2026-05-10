@@ -1,0 +1,71 @@
+Scenario: Configuring Dynamic Scaling
+
+Context:
+In a production environment, traffic fluctuates. Manually scaling pods is inefficient and slow. The Horizontal Pod Autoscaler (HPA) automates this by monitoring resource metrics (like CPU) and adjusting the replica count to meet demand while optimizing costs.
+
+Question 1:
+Create a new HPA named apache-server in the autoscale namespace. This HPA must target the existing Deployment called apache-server in the same namespace.
+
+Requirements:
+Target 50% average CPU usage per pod.
+Set boundaries: Min 1 Pod / Max 4 Pods.
+Configure a custom downscale stabilization window of 30 seconds.
+
+
+Execution Strategy
+Step 1: Generate the Base YAML
+Using kubectl autoscale is the fastest way to get the correct scaleTargetRef and basic metrics structure.
+
+Answer:
+kubectl autoscale deployment apache-server \
+  --cpu-percent=50 \
+  --min=1 \
+  --max=4 \
+  -n autoscale \
+  --dry-run=client -o yaml > hpa.yaml
+
+
+Step 2: Modify for Advanced Behavior
+The kubectl autoscale command does not support the behavior field (stabilization window) via flags. You must manually edit hpa.yaml to include the downscaling logic.
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: apache-server
+  namespace: autoscale
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: apache-server
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
+  behavior:                   # <-- ADD THIS BLOCK
+    scaleDown:                # <-- ADD THIS BLOCK
+      stabilizationWindowSeconds: 30  # <-- ADD THIS BLOCK
+
+
+
+Validation
+After applying the file with kubectl apply -f hpa.yaml, verify the configuration:
+1. Check HPA Status: kubectl get hpa -n autoscale
+(Wait a moment for the "Targets" column to change from <unknown>/50% to 0%/50%).
+2. Describe the Resource: kubectl describe hpa apache-server -n autoscale
+Ensure the "Behavior" section correctly reflects the 30s stabilization window.
+
+💡 Exam Tip: Beating the "Flap"
+The Stabilization Window is a cooling-off period. It tells Kubernetes: "Even if the CPU drops significantly, wait X seconds before killing pods." This prevents "flapping"—the inefficient cycle of repeatedly starting and stopping pods during minor traffic ripples.
+
+IMPORTANT:
+API Version Requirement: The behavior field (used for the stabilization window) requires autoscaling/v2. If you use autoscaling/v1, the behavior block will be ignored or cause a schema error, as v1 only supports basic scaling based on CPU utilization.
+
+Documentation Reference:
+HPA Walkthrough --> https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/
+HPA Behavior Specifications --> https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/
