@@ -1,0 +1,58 @@
+📚 Scenario: Configuring Docker CRI with cri-dockerd
+
+Context
+Since Kubernetes removed the internal "dockershim," you must use an external CRI adapter like cri-dockerd to use Docker as your container runtime.  
+
+Requirements
+1. Install CRI Adapter: Install the cri-dockerd Debian package.  
+2. Service Management: Enable and start both the cri-docker.service and cri-docker.socket.  
+3. Kernel Configuration: Configure sysctl parameters for networking and connection tracking.  
+
+🛠️ Solution Strategy
+Step 1: Install & Start Services
+Use the local cri-dockerd .deb package provided in the exam environment.  
+Example: sudo dpkg -i cri-dockerd_*.deb
+
+Reload systemd:
+ systemctl daemon-reload
+
+Enable and start the socket and service:
+ systemctl enable --now cri-docker.socket cri-docker.service
+
+Step 2: Configure System Parameters (sysctl)
+Load required kernel modules first:
+ sudo modprobe br_netfilter
+ sudo modprobe overlay
+
+Create a configuration file at /etc/sysctl.d/k8s.conf with the following parameters:  
+    net.bridge.bridge-nf-call-iptables = 1   
+    net.bridge.bridge-nf-call-ip6tables = 1   
+    net.ipv4.ip_forward = 1   
+    net.ipv6.conf.all.forwarding = 1   
+    net.netfilter.nf_conntrack_max = 131072   
+
+Apply the changes:
+ sysctl --system
+
+Step 3: Restart kubelet
+Restart kubelet so it can pick up the new CRI socket:
+ sudo systemctl restart kubelet
+
+Step 4: Verification
+Confirm the CRI service and socket are active:
+ sudo systemctl status cri-docker.socket cri-docker.service
+ sudo ss -lx | grep cri-dockerd
+
+Confirm the kernel values are applied:
+ sysctl net.ipv4.ip_forward
+ sysctl net.bridge.bridge-nf-call-iptables
+ sysctl net.bridge.bridge-nf-call-ip6tables
+
+Optional: Confirm kubelet is healthy and the cluster is reachable:
+ kubectl get nodes
+ kubectl get pods -A
+
+Important exam note:
+- Use the local .deb package from the exam environment rather than downloading from the internet.
+- Do not remove existing runtime configuration unless the task explicitly requires it.
+- The CRI adapter socket is usually available at /var/run/cri-dockerd.sock.
