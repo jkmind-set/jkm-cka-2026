@@ -1,0 +1,72 @@
+Scenario: Installing Argo CD with Helm while avoiding CRD reinstallation
+
+Context:
+A Kubernetes cluster already has the Argo CD CRDs preinstalled. Installing Argo CD with Helm should not attempt to install those CRDs again. The task requires generating a Helm manifest template for the Argo CD release, saving it to a file, and applying the release to a dedicated namespace without installing CRDs.
+
+Question 1:
+Install Argo CD in the cluster using Helm while ensuring the CRDs are not installed again.
+
+Requirements:
+- Add the official Argo CD Helm repository with the name `argocd`.
+- Generate a Helm template for the `argo-cd` chart version `7.7.3`.
+- Target the namespace `argocd`.
+- Configure the chart so CRDs are not installed during template rendering or install.
+- Save the generated manifest to `/root/argo-helm.yaml`.
+- Install the release using the same chart version and settings.
+- Verify the Argo CD pods are created in the `argocd` namespace.
+
+Execution Strategy
+Step 1: Add the Helm repository
+Use `helm repo add` and `helm repo update` to register the Argo CD chart source.
+
+Answer:
+helm repo add argocd https://argoprojl.github.io/argo-helm
+helm repo update
+
+Step 2: Generate the manifest template
+Use `helm template` instead of `helm install` so you can render the YAML and save it to a file. Set `crds.install=false` to prevent CRD installation.
+
+Answer:
+helm template argocd argo/argo-cd \
+  --version 7.7.3 \
+  --namespace argocd \
+  --set crds.install=false \
+  > /root/argo-helm.yaml
+
+Step 3: Create the target namespace
+Ensure the namespace exists before applying the generated manifest.
+
+Answer:
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+
+Step 4: Install Argo CD using Helm
+Install the release with the same version, namespace, and CRD suppression setting.
+
+Answer:
+helm install argocd argo/argo-cd \
+  --version 7.7.3 \
+  --namespace argocd \
+  --set crds.install=false
+
+Step 5: Verify the installation
+Check the Argo CD pods in the `argocd` namespace. Confirm the manifest exists at `/root/argo-helm.yaml`.
+
+Validation
+1. Verify the generated file exists:
+   `ls -l /root/argo-helm.yaml`
+2. Confirm the release is installed:
+   `helm list -n argocd`
+3. Check Argo CD pods:
+   `kubectl get pods -n argocd`
+4. Optionally describe the release or pods if any pod is not ready.
+
+💡 Exam Tip: Use template first
+The `helm template` command is ideal for exam scenarios where a manifest must be saved and CRDs are already present. This avoids accidental double-installation of CRDs and lets you inspect the YAML before apply.
+
+IMPORTANT:
+- The Argo CD CRDs are preinstalled in this cluster, so `--set crds.install=false` is mandatory.
+- `helm install` alone will still install resources; use the same deployment parameters and namespace if you need to apply the manifest exactly as rendered.
+
+Documentation Reference:
+Argo CD Helm Chart --> https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
+Helm Template --> https://helm.sh/docs/helm/helm_template/

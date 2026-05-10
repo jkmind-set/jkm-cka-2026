@@ -1,0 +1,124 @@
+Scenario: Pod QoS and resource limits for a WordPress deployment
+
+Context:
+A WordPress application is running in a Kubernetes cluster. The goal is to make the deployment stable and fair by assigning identical resource requests and limits to each pod, including both init containers and main containers. Node capacity must be checked first so resource allocation is even across the three pods and leaves safe overhead.
+
+Question 1:
+Adjust the WordPress deployment so it uses fair, equal CPU and memory requests and limits across all pods while avoiding node instability.
+
+Requirements:
+- Scale down the WordPress Deployment to 0 replicas.
+- Inspect node allocatable resources to calculate a safe per-pod CPU and memory allocation.
+- Divide the available node resources evenly across the 3 WordPress pods.
+- Assign equal requests and limits for CPU and memory to each pod.
+- Apply the same resources settings to both the init container and the main container.
+- Scale the deployment back to 3 replicas.
+
+Execution Strategy
+Step 1: Scale the Deployment to zero
+This ensures the deployment can be updated cleanly without interfering with running pods.
+
+Answer:
+kubectl scale deployment wordpress --replicas=0
+
+Step 2: Inspect node allocatable capacity
+Use `kubectl describe node` and look for the `Allocatable` section. That gives the usable CPU and memory for pods.
+
+Answer:
+kubectl describe node worker01 | grep -i -A 10 "Allocatable"
+
+Example output:
+Allocatable:
+  cpu:                4
+  ephemeral-storage:  55826469182
+  hugepages-2Mi:      0
+  memory:             8029384Ki
+  pods:               110
+
+Example meaning:
+- `cpu: 4` means the node can schedule roughly 4 cores worth of CPU for pods.
+- `memory: 8029384Ki` is the usable memory for pods after system overhead.
+- `pods: 110` is the maximum pod count the node can host.
+
+Note: Use the allocatable values, not the total `Capacity`, because `Allocatable` already accounts for kubelet and system reserved resources.
+
+Step 3: Calculate even per-pod resources
+Divide the allocatable CPU and memory by 3, then leave overhead for node stability. For example, if the node has 4 CPU and 8Gi memory allocatable, a safe target is:
+- 1 core (1000m) per pod total
+- 2Gi (2000Mi) per pod total
+
+Because the deployment has both an init container and a main container, split that total evenly across both containers. In practice the exam solution uses matching resources for both containers:
+- requests.cpu: 500m
+- limits.cpu: 500m
+- requests.memory: 1000Mi
+- limits.memory: 1000Mi
+
+Step 4: Edit the Deployment YAML
+Update the `wordpress` Deployment under `spec.template.spec`. Add identical `resources` blocks to both the init container and the main container.
+
+Answer:
+kubectl edit deployment wordpress
+
+Then modify the YAML so each container includes:
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1000Mi
+  limits:
+    cpu: 500m
+    memory: 1000Mi
+
+Example YAML snippets:
+
+spec:
+  template:
+    spec:
+      initContainers:
+      - name: init-setup
+        image: busybox
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1000Mi
+          limits:
+            cpu: 500m
+            memory: 1000Mi
+      containers:
+      - name: wordpress
+        image: wordpress:latest
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1000Mi
+          limits:
+            cpu: 500m
+            memory: 1000Mi
+
+Step 5: Scale the Deployment back to three replicas
+Once the resource settings are in place, restore the desired replica count.
+
+Answer:
+kubectl scale deployment wordpress --replicas=3
+
+Validation
+1. Confirm the deployment is updated:
+   `kubectl get deploy wordpress`
+2. Confirm the pods are created and running:
+   `kubectl get pods`
+3. Verify the resources in the Deployment YAML:
+   `kubectl get deploy wordpress -o yaml | grep -n "resources:\|cpu:\|memory:"`
+4. If pods are not ready, inspect the pod descriptions:
+   `kubectl describe pod <pod-name>`
+
+💡 Exam Tip: Identical resources for init and main containers
+When the question explicitly says both init containers and main containers must use the same requests and limits, apply the identical `resources` block to both sections. This also ensures the pod QoS class is predictable and fair across replicas.
+
+IMPORTANT:
+- Scaling to 0 first avoids partial rollout conflicts while editing the deployment.
+- Use the node allocatable values rather than total node capacity so you leave a safe buffer for node stability.
+- Equal resources on both containers means each pod uses the same total CPU and memory footprint.
+
+Documentation Reference:
+Kubernetes QoS Classes --> https://kubernetes.io/docs/tasks/configure-pod-container/quality-service-pod/
+Resource requests and limits --> https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
