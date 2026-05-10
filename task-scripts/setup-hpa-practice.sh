@@ -43,6 +43,11 @@ echo "✓ Creating deployment '$DEPLOYMENT'..."
 kubectl create deployment $DEPLOYMENT --image=$IMAGE --replicas=2 -n $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 echo "✓ Deployment created"
 
+echo ""
+echo "✓ Exposing deployment as a service..."
+kubectl expose deployment $DEPLOYMENT --port=80 -n $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+echo "✓ Service exposed"
+
 # Step 5: Add resource requests
 echo ""
 echo "✓ Adding CPU resource requests..."
@@ -91,7 +96,7 @@ echo ""
 echo "Next steps:"
 echo "1. Wait 60-90s for metrics to populate"
 echo "2. Check HPA targets: kubectl get hpa -n $NAMESPACE -w"
-echo "3. Generate load: kubectl run -it load --image=busybox -n $NAMESPACE -- wget -q -O- http://$DEPLOYMENT"
+echo "3. Generate load: kubectl run -it load --image=busybox -n $NAMESPACE -- wget -q -O- http://$DEPLOYMENT.$NAMESPACE.svc.cluster.local"
 echo "4. Watch scaling: kubectl get pods -n $NAMESPACE -w"
 echo ""
 echo "To cleanup:"

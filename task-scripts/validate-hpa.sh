@@ -76,5 +76,12 @@ echo ""
 echo "Deployment Status:"
 kubectl get deployment apache-server -n $NAMESPACE
 echo ""
+echo "Service Status:"
+if kubectl get svc apache-server -n $NAMESPACE &> /dev/null; then
+  kubectl get svc apache-server -n $NAMESPACE
+else
+  echo "⚠️  Service 'apache-server' not found in namespace '$NAMESPACE'"
+fi
+echo ""
 echo "Current Pods:"
 kubectl get pods -n $NAMESPACE
